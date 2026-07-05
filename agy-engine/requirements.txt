@@ -1,0 +1,24 @@
+# Google Antigravity SDK
+google-antigravity>=0.1.0
+
+# Database
+asyncpg>=0.29.0
+
+# MCP Bridge
+fastmcp>=0.1.0
+
+# Data Validation & Structured Output
+pydantic>=2.0.0
+
+# Multi-model LLM Support
+litellm>=1.40.0
+
+# Environment variables
+python-dotenv>=1.0.0
+
+# HTTP server for MCP bridge
+uvicorn>=0.30.0
+starlette>=0.38.0
+
+# Utilities
+python-dateutil>=2.9.0

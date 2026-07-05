@@ -1,0 +1,130 @@
+version: "3.9"
+
+services:
+  # ============================================
+  # PostgreSQL 16 — Main Database
+  # ============================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: roomgenius-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: roomgenius
+      POSTGRES_PASSWORD: roomgenius_secret
+      POSTGRES_DB: roomgenius_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U roomgenius -d roomgenius_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ============================================
+  # Redis 7 — Cache, Pub/Sub, Job Queue
+  # ============================================
+  redis:
+    image: redis:7-alpine
+    container_name: roomgenius-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ============================================
+  # LiteLLM Proxy — Multi-Model AI Gateway
+  # ============================================
+  litellm:
+    image: ghcr.io/berriai/litellm:main-latest
+    container_name: roomgenius-litellm
+    restart: unless-stopped
+    ports:
+      - "4001:4000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./litellm-config.yaml:/app/config.yaml
+    environment:
+      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:-sk-litellm-master-key}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - VERTEX_PROJECT=${VERTEX_PROJECT}
+      - VERTEX_LOCATION=${VERTEX_LOCATION}
+      - VERTEX_CREDENTIALS=${VERTEX_CREDENTIALS}
+    command: ["--config", "/app/config.yaml", "--port", "4000"]
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  # ============================================
+  # AGY Engine — Antigravity AI Agent System
+  # ============================================
+  agy-engine:
+    build:
+      context: ./agy-engine
+      dockerfile: Dockerfile
+    container_name: roomgenius-agy
+    restart: unless-stopped
+    ports:
+      - "8765:8765"
+    environment:
+      - DATABASE_URL=postgresql://roomgenius:roomgenius_secret@postgres:5432/roomgenius_db
+      - REDIS_URL=redis://redis:6379
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - LITELLM_BASE_URL=http://litellm:4000
+      - LITELLM_API_KEY=${LITELLM_MASTER_KEY:-sk-litellm-master-key}
+      - MCP_SERVER_PORT=8765
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/gcp-creds.json
+    volumes:
+      - agy_data:/data
+      - ./agy-engine:/app
+      - /home/jointaceshop/.config/gcloud/application_default_credentials.json:/app/gcp-creds.json:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      litellm:
+        condition: service_started
+
+  # ============================================
+  # Next.js Web App — Frontend + API
+  # ============================================
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: roomgenius-web
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - DATABASE_URL=postgresql://roomgenius:roomgenius_secret@postgres:5432/roomgenius_db
+      - REDIS_URL=redis://redis:6379
+      - MCP_SERVER_HOST=agy-engine
+      - MCP_SERVER_PORT=8765
+      - NEXTAUTH_URL=${NEXTAUTH_URL:-http://localhost:3000}
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}
+      - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      agy-engine:
+        condition: service_started
+
+volumes:
+  postgres_data:
+  redis_data:
+  agy_data:

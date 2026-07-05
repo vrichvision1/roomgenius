@@ -1,0 +1,552 @@
+// ============================================
+// RoomGenius AI — Database Schema
+// Prisma ORM + PostgreSQL 16
+// Multi-tenant SaaS with Row-Level Security
+// ============================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ============================================
+// 🏢 TENANT (SaaS Organization)
+// ============================================
+model Tenant {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique // subdomain: slug.roomgenius.ai
+  logo      String?
+  plan      Plan     @default(STARTER)
+  trialEndsAt DateTime?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Stripe
+  stripeCustomerId     String? @unique
+  stripeSubscriptionId String? @unique
+  stripePriceId        String?
+
+  // Relations
+  users              User[]
+  properties         Property[]
+  notifications      Notification[]
+  aiConversations    AIConversation[]
+  aiModelConfigs     AIModelConfig[]
+
+  @@map("tenants")
+}
+
+enum Plan {
+  STARTER
+  PROFESSIONAL
+  BUSINESS
+  ENTERPRISE
+}
+
+// ============================================
+// 👤 USER (Member of Tenant)
+// ============================================
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String?
+  image         String?
+  password      String?   // hashed
+  phone         String?
+  lineUserId    String?
+  role          UserRole  @default(STAFF)
+  emailVerified DateTime?
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relations
+  tenantId        String
+  tenant          Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  accounts        Account[]
+  sessions        Session[]
+  notifications   Notification[]
+  aiConversations AIConversation[]
+
+  @@map("users")
+}
+
+enum UserRole {
+  OWNER
+  ADMIN
+  STAFF
+  VIEWER
+}
+
+// NextAuth.js Required Models
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+// ============================================
+// 🏠 PROPERTY (อสังหาริมทรัพย์)
+// ============================================
+model Property {
+  id            String       @id @default(cuid())
+  name          String       // ชื่อ: "หอพักสุขใจ", "คอนโดวิวทะเล"
+  type          PropertyType
+  address       String
+  district      String?      // แขวง/ตำบล
+  subDistrict   String?      // เขต/อำเภอ
+  province      String?      // จังหวัด
+  postalCode    String?
+  phone         String?
+  totalRooms    Int          @default(0)
+  totalFloors   Int          @default(1)
+  description   String?      @db.Text
+  image         String?      // Property image URL
+
+  // Utility Rates
+  waterRate     Float        @default(18.0)   // บาท/หน่วย
+  electricRate  Float        @default(8.0)    // บาท/หน่วย
+  commonAreaFee Float        @default(0)      // ค่าส่วนกลาง/เดือน
+
+  // Settings
+  rentDueDay    Int          @default(1)      // วันครบกำหนดจ่ายค่าเช่า (1-28)
+  lateFee       Float        @default(0)      // ค่าปรับล่าช้า/วัน
+  lateFeeType   LateFeeType  @default(FIXED)  // ค่าปรับแบบคงที่หรือเปอร์เซ็นต์
+
+  isActive      Boolean      @default(true)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  // Relations
+  tenantId            String
+  tenant              Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  rooms               Room[]
+  maintenanceRequests MaintenanceRequest[]
+  supplyItems         SupplyItem[]
+
+  @@map("properties")
+}
+
+enum PropertyType {
+  HOSTEL      // หอพัก
+  CONDO       // คอนโด
+  APARTMENT   // อพาร์ทเม้นท์
+  HOTEL       // โรงแรม
+  HOUSE       // บ้านเช่า
+  COMMERCIAL  // อาคารพาณิชย์
+}
+
+enum LateFeeType {
+  FIXED       // จำนวนคงที่ (บาท/วัน)
+  PERCENTAGE  // เปอร์เซ็นต์ของค่าเช่า
+}
+
+// ============================================
+// 🚪 ROOM (ห้อง)
+// ============================================
+model Room {
+  id          String     @id @default(cuid())
+  number      String     // เลขห้อง: "101", "A-201"
+  floor       Int        @default(1)
+  type        RoomType   @default(STANDARD)
+  status      RoomStatus @default(VACANT)
+  size        Float?     // ตร.ม.
+  description String?    @db.Text
+  image       String?
+
+  // Pricing
+  monthlyRate Float?     // ค่าเช่ารายเดือน
+  dailyRate   Float?     // ค่าเช่ารายวัน
+  yearlyRate  Float?     // ค่าเช่ารายปี
+
+  // Amenities stored as JSON
+  amenities   Json?      // { "aircon": true, "wifi": true, "furniture": true }
+
+  isActive    Boolean    @default(true)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  // Relations
+  propertyId      String
+  property        Property        @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  leases          Lease[]
+  utilityReadings UtilityReading[]
+
+  @@unique([propertyId, number])
+  @@map("rooms")
+}
+
+enum RoomType {
+  STANDARD    // ห้องมาตรฐาน
+  DELUXE      // ห้องดีลักซ์
+  SUITE       // ห้องสวีท
+  STUDIO      // สตูดิโอ
+  DORMITORY   // ห้องรวม/หอพัก
+}
+
+enum RoomStatus {
+  VACANT      // ว่าง
+  OCCUPIED    // มีคนเช่า
+  RESERVED    // จอง
+  MAINTENANCE // กำลังซ่อม
+  UNAVAILABLE // ไม่พร้อมใช้
+}
+
+// ============================================
+// 📋 LEASE (สัญญาเช่า)
+// ============================================
+model Lease {
+  id            String      @id @default(cuid())
+  startDate     DateTime
+  endDate       DateTime
+  rentType      RentType
+  rentAmount    Float       // ค่าเช่า (ไม่รวมค่าน้ำ/ไฟ)
+  depositAmount Float       @default(0)    // เงินมัดจำ
+  status        LeaseStatus @default(ACTIVE)
+  documentUrl   String?     // URL ของเอกสารสัญญา (PDF)
+  terms         String?     @db.Text       // เงื่อนไขเพิ่มเติม
+  notes         String?     @db.Text
+
+  // Tenant Information (ข้อมูลผู้เช่า)
+  tenantName    String
+  tenantPhone   String?
+  tenantEmail   String?
+  tenantIdCard  String?     // เลขบัตรประชาชน (encrypted)
+  tenantLineId  String?
+  tenantAddress String?     @db.Text
+
+  // Emergency Contact
+  emergencyName  String?
+  emergencyPhone String?
+
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  // Relations
+  roomId        String
+  room          Room        @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  payments      Payment[]
+
+  @@map("leases")
+}
+
+enum RentType {
+  DAILY       // รายวัน
+  MONTHLY     // รายเดือน
+  YEARLY      // รายปี
+}
+
+enum LeaseStatus {
+  ACTIVE      // กำลังใช้งาน
+  EXPIRED     // หมดอายุ
+  TERMINATED  // ยกเลิก
+  PENDING     // รอเริ่มต้น
+}
+
+// ============================================
+// 💰 PAYMENT (การจ่ายเงิน)
+// ============================================
+model Payment {
+  id          String        @id @default(cuid())
+  amount      Float
+  type        PaymentType
+  method      PaymentMethod @default(CASH)
+  status      PaymentStatus @default(PENDING)
+  dueDate     DateTime
+  paidDate    DateTime?
+  receiptUrl  String?       // URL ใบเสร็จ
+  notes       String?       @db.Text
+
+  // Utility Bill Details (ถ้า type = UTILITY)
+  waterUnits    Float?
+  waterAmount   Float?
+  electricUnits Float?
+  electricAmount Float?
+
+  // Common Area Fee (ถ้า type = COMMON_FEE)
+  commonFeeAmount Float?
+
+  // Late Fee
+  lateFeeAmount   Float?    @default(0)
+
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  // Relations
+  leaseId     String
+  lease       Lease         @relation(fields: [leaseId], references: [id], onDelete: Cascade)
+
+  @@map("payments")
+}
+
+enum PaymentType {
+  RENT        // ค่าเช่า
+  UTILITY     // ค่าน้ำ/ไฟ
+  COMMON_FEE  // ค่าส่วนกลาง
+  DEPOSIT     // เงินมัดจำ
+  LATE_FEE    // ค่าปรับ
+  OTHER       // อื่นๆ
+}
+
+enum PaymentMethod {
+  CASH        // เงินสด
+  TRANSFER    // โอนเงิน
+  PROMPTPAY   // พร้อมเพย์
+  CREDIT_CARD // บัตรเครดิต
+  CHECK       // เช็ค
+  OTHER       // อื่นๆ
+}
+
+enum PaymentStatus {
+  PENDING     // รอชำระ
+  PAID        // ชำระแล้ว
+  OVERDUE     // เกินกำหนด
+  PARTIAL     // ชำระบางส่วน
+  CANCELLED   // ยกเลิก
+  REFUNDED    // คืนเงิน
+}
+
+// ============================================
+// ⚡ UTILITY READING (มิเตอร์น้ำ/ไฟ)
+// ============================================
+model UtilityReading {
+  id              String      @id @default(cuid())
+  type            UtilityType
+  previousReading Float
+  currentReading  Float
+  unitsUsed       Float       // คำนวณอัตโนมัติ: current - previous
+  ratePerUnit     Float       // อัตราค่าหน่วย ณ เวลาที่จด
+  totalAmount     Float       // unitsUsed × ratePerUnit
+  readingDate     DateTime
+  billingPeriod   String      // "2026-07" format
+  image           String?     // รูปถ่ายมิเตอร์
+  notes           String?
+
+  createdAt       DateTime    @default(now())
+
+  // Relations
+  roomId          String
+  room            Room        @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  @@unique([roomId, type, billingPeriod])
+  @@map("utility_readings")
+}
+
+enum UtilityType {
+  WATER     // น้ำประปา
+  ELECTRIC  // ไฟฟ้า
+  GAS       // แก๊ส (optional)
+  INTERNET  // อินเทอร์เน็ต (optional)
+}
+
+// ============================================
+// 🧻 SUPPLY ITEM (วัสดุสิ้นเปลือง)
+// ============================================
+model SupplyItem {
+  id               String   @id @default(cuid())
+  name             String   // ทิชชู่, สบู่, ผ้าเช็ดตัว, น้ำยาทำความสะอาด
+  category         String?  // หมวดหมู่: ห้องน้ำ, ทำความสะอาด, สำนักงาน
+  unit             String   @default("ชิ้น") // หน่วยนับ
+  currentStock     Int      @default(0)
+  minimumStock     Int      @default(5)       // แจ้งเตือนเมื่อต่ำกว่า
+  costPerUnit      Float    @default(0)       // ราคาต่อหน่วย
+  supplier         String?  // ชื่อร้าน/ผู้จำหน่าย
+  lastRestocked    DateTime?
+  autoReorder      Boolean  @default(false)   // สั่งซื้ออัตโนมัติ
+  reorderQuantity  Int      @default(10)      // จำนวนที่สั่งซื้อ
+
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  // Relations
+  propertyId       String
+  property         Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@map("supply_items")
+}
+
+// ============================================
+// 🔧 MAINTENANCE REQUEST (แจ้งซ่อม)
+// ============================================
+model MaintenanceRequest {
+  id          String              @id @default(cuid())
+  title       String
+  description String              @db.Text
+  priority    MaintenancePriority @default(MEDIUM)
+  status      MaintenanceStatus   @default(OPEN)
+  category    String?             // ประปา, ไฟฟ้า, แอร์, ทั่วไป
+  roomNumber  String?             // อ้างอิงห้อง (optional)
+  images      Json?               // ["url1", "url2"]
+  assignedTo  String?             // ชื่อช่าง/ผู้รับผิดชอบ
+  estimatedCost Float?
+  actualCost    Float?
+  resolvedAt  DateTime?
+  notes       String?             @db.Text
+
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  // Relations
+  propertyId  String
+  property    Property            @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@map("maintenance_requests")
+}
+
+enum MaintenancePriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum MaintenanceStatus {
+  OPEN          // เปิดงาน
+  IN_PROGRESS   // กำลังดำเนินการ
+  ON_HOLD       // รอดำเนินการ
+  RESOLVED      // แก้ไขแล้ว
+  CLOSED        // ปิดงาน
+}
+
+// ============================================
+// 🔔 NOTIFICATION (การแจ้งเตือน)
+// ============================================
+model Notification {
+  id          String             @id @default(cuid())
+  type        NotificationType
+  channel     NotificationChannel @default(IN_APP)
+  title       String
+  message     String             @db.Text
+  isRead      Boolean            @default(false)
+  metadata    Json?              // ข้อมูลเพิ่มเติม (link, reference IDs)
+  scheduledAt DateTime?
+  sentAt      DateTime?
+
+  createdAt   DateTime           @default(now())
+
+  // Relations
+  userId      String?
+  user        User?              @relation(fields: [userId], references: [id], onDelete: SetNull)
+  tenantId    String
+  tenant      Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("notifications")
+}
+
+enum NotificationType {
+  RENT_DUE        // ค่าเช่าครบกำหนด
+  RENT_OVERDUE    // ค่าเช่าเกินกำหนด
+  PAYMENT_RECEIVED // ได้รับการชำระ
+  LEASE_EXPIRING  // สัญญาใกล้หมด
+  LEASE_EXPIRED   // สัญญาหมดอายุ
+  UTILITY_ANOMALY // ค่าน้ำ/ไฟผิดปกติ
+  SUPPLY_LOW      // วัสดุใกล้หมด
+  MAINTENANCE_NEW // แจ้งซ่อมใหม่
+  MAINTENANCE_UPDATE // อัพเดทงานซ่อม
+  AI_INSIGHT      // AI วิเคราะห์
+  DAILY_SUMMARY   // สรุปรายวัน
+  SYSTEM          // ระบบ
+}
+
+enum NotificationChannel {
+  IN_APP    // แจ้งเตือนในแอป
+  EMAIL     // อีเมล
+  LINE      // LINE
+  SMS       // SMS
+}
+
+// ============================================
+// 🤖 AI CONVERSATION (ประวัติสนทนา AI)
+// ============================================
+model AIConversation {
+  id               String   @id @default(cuid())
+  agyConversationId String?  // Antigravity SDK conversation ID (for persistence)
+  title            String?  // สร้างอัตโนมัติจากข้อความแรก
+  messages         Json     @default("[]") // Array of {role, content, timestamp}
+  modelUsed        String   @default("gemini-flash")
+  totalTokens      Int      @default(0)
+  totalCost        Float    @default(0)
+  context          Json?    // { propertyId, roomId, leaseId }
+  isActive         Boolean  @default(true)
+
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  // Relations
+  userId           String
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenantId         String
+  tenant           Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("ai_conversations")
+}
+
+// ============================================
+// ⚙️ AI MODEL CONFIG (การตั้งค่า AI)
+// ============================================
+model AIModelConfig {
+  id          String       @id @default(cuid())
+  provider    AIProvider
+  modelName   String       // "gemini-flash", "gpt-4o", "claude-sonnet"
+  displayName String       // "Gemini Flash", "ChatGPT 4o", "Claude Sonnet"
+  apiKey      String?      // encrypted — ถ้า null ใช้ system key
+  isDefault   Boolean      @default(false)
+  isEnabled   Boolean      @default(true)
+  priority    Int          @default(1) // ลำดับ fallback
+  budgetLimit Float?       // USD budget limit
+  currentSpend Float       @default(0)
+
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  // Relations
+  tenantId    String
+  tenant      Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, provider, modelName])
+  @@map("ai_model_configs")
+}
+
+enum AIProvider {
+  GEMINI
+  OPENAI
+  ANTHROPIC
+}

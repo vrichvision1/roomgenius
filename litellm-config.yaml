@@ -1,0 +1,123 @@
+# ============================================
+# LiteLLM Proxy Configuration
+# RoomGenius AI — Multi-Model AI Gateway
+# ============================================
+# Routes AI requests to multiple providers with
+# automatic fallback, cost tracking, and load balancing
+
+model_list:
+  # ---- Google Gemini (Default / Primary) ----
+  - model_name: gemini-flash
+    litellm_params:
+      model: gemini/gemini-2.5-flash
+      api_key: os.environ/GEMINI_API_KEY
+    model_info:
+      description: "Fast, cost-effective model for everyday tasks"
+
+  - model_name: gemini-pro
+    litellm_params:
+      model: gemini/gemini-2.5-pro
+      api_key: os.environ/GEMINI_API_KEY
+    model_info:
+      description: "Advanced reasoning model for complex analysis"
+
+  # ---- OpenAI (ChatGPT / Codex) ----
+  - model_name: gpt-4o
+    litellm_params:
+      model: openai/gpt-4o
+      api_key: os.environ/OPENAI_API_KEY
+    model_info:
+      description: "OpenAI flagship multimodal model"
+
+  - model_name: gpt-4o-mini
+    litellm_params:
+      model: openai/gpt-4o-mini
+      api_key: os.environ/OPENAI_API_KEY
+    model_info:
+      description: "Fast, affordable model for simple tasks"
+
+  - model_name: codex
+    litellm_params:
+      model: openai/gpt-4o
+      api_key: os.environ/OPENAI_API_KEY
+    model_info:
+      description: "Code generation and analysis"
+
+  # ---- Anthropic (Claude) ----
+  - model_name: claude-sonnet
+    litellm_params:
+      model: anthropic/claude-sonnet-4-20250514
+      api_key: os.environ/ANTHROPIC_API_KEY
+    model_info:
+      description: "Anthropic balanced model for analysis and writing"
+
+  - model_name: claude-haiku
+    litellm_params:
+      model: anthropic/claude-haiku-4-20250414
+      api_key: os.environ/ANTHROPIC_API_KEY
+    model_info:
+      description: "Fast, compact model for quick responses"
+
+  # ---- Google Vertex AI (GCP - proxied to host LiteLLM) ----
+  - model_name: vertex-gemini-flash
+    litellm_params:
+      model: openai/google-vertex/gemini-2.5-flash
+      api_base: http://host.docker.internal:4000/v1
+      api_key: sk-local-openclaw
+    model_info:
+      description: "Google Vertex AI Gemini 2.5 Flash via host LiteLLM"
+
+  - model_name: vertex-gemini-pro
+    litellm_params:
+      model: openai/google-vertex/gemini-2.5-pro
+      api_base: http://host.docker.internal:4000/v1
+      api_key: sk-local-openclaw
+    model_info:
+      description: "Google Vertex AI Gemini 2.5 Pro via host LiteLLM"
+
+# ---- Routing Strategy ----
+router_settings:
+  routing_strategy: cost-based-routing
+  num_retries: 3
+  timeout: 120
+  retry_after: 5
+  allowed_fails: 2
+  cooldown_time: 60
+
+  # Fallback chain: if primary fails, try next
+  fallbacks:
+    - gemini-flash: [vertex-gemini-flash, gpt-4o-mini, claude-haiku]
+    - gemini-pro: [vertex-gemini-pro, gpt-4o, claude-sonnet]
+    - vertex-gemini-flash: [gemini-flash, gpt-4o-mini]
+    - vertex-gemini-pro: [gemini-pro, gpt-4o]
+    - gpt-4o: [gemini-pro, vertex-gemini-pro, claude-sonnet]
+    - claude-sonnet: [gpt-4o, gemini-pro, vertex-gemini-pro]
+
+# ---- General Settings ----
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+  database_url: null
+
+  # Enable caching with Redis
+  cache: true
+  cache_params:
+    type: redis
+    host: redis
+    port: 6379
+
+  # Request logging
+  store_model_in_db: false
+
+litellm_settings:
+  # Set max budget (USD) per day across all models
+  max_budget: 50.0
+  budget_duration: 1d
+
+  # Enable cost tracking
+  success_callback: ["langfuse"]
+
+  # Drop unsupported params instead of erroring
+  drop_params: true
+
+  # Set default model
+  default_model: gemini-flash

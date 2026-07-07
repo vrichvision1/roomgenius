@@ -37,7 +37,7 @@ export async function POST(req: NextRequest) {
     const mcpResponse = await callMcpTool("switch_ai_model", {
       provider,
       model_name: modelName,
-    });
+    }) as any;
 
     if (mcpResponse && mcpResponse.content && mcpResponse.content.length > 0) {
       const firstContent = mcpResponse.content[0];

@@ -19,7 +19,7 @@ export async function POST(req: NextRequest) {
     }
 
     // เรียกใช้งานเครื่องมือ chat_with_ai บน Python AGY Engine ผ่าน MCP Bridge
-    const mcpResponse = await callMcpTool("chat_with_ai", args);
+    const mcpResponse = await callMcpTool("chat_with_ai", args) as any;
 
     // ผลลัพธ์จาก MCP จะอยู่ในรูป text ใน content array
     if (mcpResponse && mcpResponse.content && mcpResponse.content.length > 0) {

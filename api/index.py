@@ -5,10 +5,9 @@ import json
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
-# Add agy-engine to python path so we can import from it
-sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "agy-engine"))
-
-# Setup GCP credentials if provided via env var (raw JSON string)
+# Import agents and db utilities locally
+from google.antigravity import Agent
+from agents.orchestrator import create_orchestrator_config
 gcp_creds = os.getenv("GCP_CREDS_JSON")
 if gcp_creds:
     try:
@@ -21,9 +20,6 @@ if gcp_creds:
     except Exception as e:
         print(f"Error writing GCP credentials: {e}")
 
-# Import agents and db utilities from agy-engine
-from google.antigravity import Agent
-from agents.orchestrator import create_orchestrator_config
 
 app = FastAPI(title="RoomGenius AI Backend", docs_url="/api/python/docs", openapi_url="/api/python/openapi.json")
 

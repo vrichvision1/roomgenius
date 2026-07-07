@@ -7,11 +7,11 @@
  */
 export async function callMcpTool(toolName: string, args: Record<string, any> = {}) {
   // ในพัฒนาการ (development): เชื่อมต่อไปยังพอร์ต 8765 ที่ uvicorn รัน
-  // ในโปรดักชัน (production): เชื่อมต่อผ่านโดเมนตัวเองบน Vercel
+  // ในโปรดักชัน (production): เชื่อมต่อผ่านโดเมนจริงตัวหลักบน Vercel (เลี่ยงบล็อกจาก Vercel Preview Protection)
   const isDev = process.env.NODE_ENV === "development";
   const baseUrl = isDev
     ? "http://127.0.0.1:8765"
-    : `https://${process.env.VERCEL_URL || "roomgenius.vercel.app"}`;
+    : "https://roomgenius.vercel.app";
 
   try {
     if (toolName === "chat_with_ai") {

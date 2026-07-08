@@ -5,6 +5,9 @@ import json
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
+# Add current directory to python path for local submodules
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
 # Import agents and db utilities locally
 from google.antigravity import Agent
 from agents.orchestrator import create_orchestrator_config

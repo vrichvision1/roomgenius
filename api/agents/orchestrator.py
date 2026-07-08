@@ -98,9 +98,21 @@ def create_orchestrator_config(conversation_id: str = None) -> LocalAgentConfig:
         "- คุณสามารถมอบหมายงานย่อยที่ต้องการความเชี่ยวชาญเฉพาะด้านให้แก่ Subagents ได้ตามต้องการ"
     )
 
+    # กำหนด model_id ให้ตรงกับชื่อโมเดลจริงใน endpoint list เพื่อเลี่ยงการสร้าง Default Gemini Endpoint
+    if model_name == "vertex-gemini-flash":
+        agent_model_id = "gemini-2.5-flash"
+    elif model_name == "vertex-gemini-pro":
+        agent_model_id = "gemini-2.5-pro"
+    elif model_name == "gemini-flash":
+        agent_model_id = "gemini-2.5-flash"
+    elif model_name == "gemini-pro":
+        agent_model_id = "gemini-2.5-pro"
+    else:
+        agent_model_id = model_name
+
     # สร้าง Config
     config = LocalAgentConfig(
-        model=model_name if not litellm_base else None,
+        model=agent_model_id if not litellm_base else None,
         models=models,
         system_instructions=system_instructions,
         tools=all_tools,

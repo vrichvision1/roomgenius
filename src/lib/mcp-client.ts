@@ -1,66 +1,90 @@
+import { spawn } from "child_process";
+import path from "path";
+import fs from "fs";
+
 /**
- * เรียกใช้งานเครื่องมือ (Tool) บน Python FastAPI Backend (แทนที่ MCP Client เดิม)
+ * เรียกใช้งานเครื่องมือ (Tool) บน Python AGY Engine โดยตรงผ่านช่องทาง CLI Subprocess
  * 
  * @param toolName ชื่อเครื่องมือ เช่น chat_with_ai, switch_ai_model
  * @param args อาร์กิวเมนต์ที่ต้องการส่งให้เครื่องมือ
  * @returns ผลลัพธ์ในรูปแบบเดียวกับ MCP response เพื่อให้สอดคล้องกับ API route เดิม
  */
 export async function callMcpTool(toolName: string, args: Record<string, any> = {}) {
-  // ในพัฒนาการ (development): เชื่อมต่อไปยังพอร์ต 8765 ที่ uvicorn รัน
-  // ในโปรดักชัน (production): เชื่อมต่อผ่านโดเมนจริงตัวหลักบน Vercel (เลี่ยงบล็อกจาก Vercel Preview Protection)
-  const isDev = process.env.NODE_ENV === "development";
-  const baseUrl = isDev
-    ? "http://127.0.0.1:8765"
-    : "https://roomgenius.vercel.app";
+  const modelFilePath = path.join(process.cwd(), "agy-engine", "data", "selected_model.txt");
 
   try {
     if (toolName === "chat_with_ai") {
-      const response = await fetch(`${baseUrl}/api/python/chat`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
+      // อ่านโมเดลปัจจุบันที่ผู้ใช้เลือกไว้จากไฟล์ข้อความ
+      let selectedModel = "vertex-gemini-flash";
+      if (fs.existsSync(modelFilePath)) {
+        selectedModel = fs.readFileSync(modelFilePath, "utf8").trim();
+      }
+
+      return new Promise((resolve, reject) => {
+        const cliPath = path.join(process.cwd(), "agy-engine", "cli.py");
+        const pythonProcess = spawn("python3", [cliPath]);
+
+        let stdout = "";
+        let stderr = "";
+
+        pythonProcess.stdout.on("data", (data) => {
+          stdout += data.toString();
+        });
+
+        pythonProcess.stderr.on("data", (data) => {
+          stderr += data.toString();
+        });
+
+        pythonProcess.on("close", (code) => {
+          if (code !== 0) {
+            console.error(`CLI execution failed (code ${code}):`, stderr);
+            reject(new Error(`CLI error: Code ${code}. Stderr: ${stderr}`));
+            return;
+          }
+
+          try {
+            const data = JSON.parse(stdout);
+            resolve({
+              content: [
+                {
+                  type: "text",
+                  text: JSON.stringify(data),
+                },
+              ],
+            });
+          } catch (err) {
+            reject(new Error(`Failed to parse CLI output: ${stdout}`));
+          }
+        });
+
+        // ส่งข้อความประเด็นพูดคุยและคอนฟิกไปให้ stdin ของ Python CLI
+        const payload = {
           message: args.message,
           conversation_id: args.conversation_id || null,
-        }),
+          model_name: selectedModel
+        };
+        pythonProcess.stdin.write(JSON.stringify(payload));
+        pythonProcess.stdin.end();
       });
 
-      if (!response.ok) {
-        throw new Error(`FastAPI chat error: ${response.statusText}`);
-      }
-
-      const data = await response.json();
-      return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify(data),
-          },
-        ],
-      };
     } else if (toolName === "switch_ai_model") {
-      const response = await fetch(`${baseUrl}/api/python/models`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          provider: args.provider,
-          modelName: args.model_name,
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`FastAPI model switch error: ${response.statusText}`);
+      // บันทึกโมเดลที่เลือกลงไฟล์
+      const dirPath = path.dirname(modelFilePath);
+      if (!fs.existsSync(dirPath)) {
+        fs.mkdirSync(dirPath, { recursive: true });
       }
+      fs.writeFileSync(modelFilePath, args.model_name, "utf8");
 
-      const data = await response.json();
       return {
         content: [
           {
             type: "text",
-            text: JSON.stringify(data),
+            text: JSON.stringify({
+              status: "success",
+              provider: args.provider,
+              model_name: args.model_name,
+              message: `สลับไปใช้โมเดล ${args.model_name} เรียบร้อยแล้ว`,
+            }),
           },
         ],
       };

@@ -13,10 +13,16 @@ def create_orchestrator_config(conversation_id: str = None) -> LocalAgentConfig:
     """
     สร้างและคืนค่าโครงสร้างการตั้งค่าสำหรับ AI Agent ประสานงานหลัก (Orchestrator)
     """
-    # กำหนดเส้นทางเก็บข้อมูลประวัติและอาร์ติแฟกต์
+    # กำหนดเส้นทางเก็บข้อมูลประวัติและอาร์ติแฟกต์ (ใช้ /tmp ใน Vercel และ ~/.roomgenius ในเครื่อง local เพื่อเลี่ยงช่องว่างในชื่อโฟลเดอร์)
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    save_dir = os.path.join(base_dir, "data", "conversations")
-    app_data_dir = os.path.join(base_dir, "data", "artifacts")
+    is_vercel = os.getenv("VERCEL") == "1"
+    if is_vercel:
+        save_dir = "/tmp/data/conversations"
+        app_data_dir = "/tmp/data/artifacts"
+    else:
+        home_dir = os.path.expanduser("~")
+        save_dir = os.path.join(home_dir, ".roomgenius", "data", "conversations")
+        app_data_dir = os.path.join(home_dir, ".roomgenius", "data", "artifacts")
     skills_paths = [os.path.join(base_dir, "skills")]
     
     # สร้างโฟลเดอร์สำหรับเก็บข้อมูลหากยังไม่มี

@@ -93,11 +93,11 @@ export default function AIAssistantPage() {
 
 หรือเลือก Quick Command ด้านล่างเลยครับ! 👇`,
       timestamp: new Date('2026-07-05T18:00:00'),
-      model: 'vertex-gemini-flash',
+      model: 'gemini-flash',
     },
   ]);
   const [input, setInput] = useState('');
-  const [selectedModel, setSelectedModel] = useState('vertex-gemini-flash');
+  const [selectedModel, setSelectedModel] = useState('gemini-flash');
   const [showModelSelector, setShowModelSelector] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
   const [conversationId, setConversationId] = useState<string | null>(null);
@@ -112,7 +112,7 @@ export default function AIAssistantPage() {
     }
     
     // ตั้งค่าโมเดลเริ่มต้นบน backend ทันทีที่โหลดหน้าเว็บ
-    handleModelChange('vertex-gemini-flash');
+    handleModelChange('gemini-flash');
   }, []);
 
   const scrollToBottom = () => {

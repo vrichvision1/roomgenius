@@ -67,7 +67,7 @@ def create_orchestrator_config(conversation_id: str = None) -> LocalAgentConfig:
     }
 
     # กำหนด Model: สลับใช้ผ่าน Native Vertex AI, Native Gemini Studio หรือ LiteLLM Proxy
-    model_name = os.getenv("AI_MODEL_NAME", "vertex-gemini-flash")
+    model_name = os.getenv("AI_MODEL_NAME", "gemini-flash")
     litellm_base = os.getenv("LITELLM_BASE_URL")
     litellm_key = os.getenv("LITELLM_API_KEY")
 
